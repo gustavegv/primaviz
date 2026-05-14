@@ -22,6 +22,8 @@
 /// - title (none, content): Optional chart title
 /// - show-values (bool): Display value labels at bar ends
 /// - bar-height (auto, float): Bar thickness as fraction of slot (0 to 1), auto = 0.6
+/// - x-label (none, content): Optional x-axis label
+/// - axis-max (auto, float): Optional minimum symmetric maximum for the x-axis
 /// - theme (none, dictionary): Theme overrides
 /// - extra-legend-separation (length): Extra space between legend and chart
 /// -> content
@@ -33,156 +35,178 @@
   show-values: true,
   bar-height: auto,
   x-label: none,
+  axis-max: auto,
   theme: none,
   extra-legend-separation: 0pt
 ) = context {
   layout(size => {
-  validate-diverging-data(data, "diverging-bar-chart")
-  let t = _resolve-ctx(theme)
-  let (width, height) = resolve-size(width, height, size, n: data.labels.len(), theme: t)
+    validate-diverging-data(data, "diverging-bar-chart")
+    let t = _resolve-ctx(theme)
+    let (width, height) = resolve-size(width, height, size, n: data.labels.len(), theme: t)
 
-  let labels = data.labels
-  let left-values = data.left-values
-  let right-values = data.right-values
-  let left-label = if "left-label" in data { data.left-label } else { none }
-  let right-label = if "right-label" in data { data.right-label } else { none }
-  let n = labels.len()
+    let labels = data.labels
+    let left-values = data.left-values
+    let right-values = data.right-values
+    let left-label = if "left-label" in data { data.left-label } else { none }
+    let right-label = if "right-label" in data { data.right-label } else { none }
+    let n = labels.len()
 
-  let bar-frac = if bar-height == auto { 0.6 } else { bar-height }
+    let bar-frac = if bar-height == auto { 0.6 } else { bar-height }
 
-  // Find the max value across both sides for proportional scaling
-  let all-values = (..left-values, ..right-values)
-  let max-val = nonzero(calc.max(..all-values))
+    // Find the max value across both sides for proportional scaling
+    let all-values = (..left-values, ..right-values)
+    let data-max = nonzero(calc.max(..all-values))
+    let max-val = if axis-max == auto {
+      data-max
+    } else {
+      nonzero(calc.max(axis-max, data-max))
+    }
 
-  // Layout constants — scale label area with chart width
-  let label-area = calc.min(80pt, width * 0.28)
-  let right-pad = t.axis-padding-right
-  let usable-width = width - label-area - right-pad
-  let half-width = usable-width / 2
-  let center-x = label-area + half-width
+    // Layout constants — scale label area with chart width
+    let label-area = calc.min(80pt, width * 0.28)
+    let right-pad = t.axis-padding-right
+    let usable-width = width - label-area - right-pad
+    let half-width = usable-width / 2
+    let center-x = label-area + half-width
 
-  let show-legend = left-label != none and right-label != none
-  let extra-h = if show-legend { 50pt } else { 30pt }
+    let show-legend = left-label != none and right-label != none
+    let extra-h = if show-legend { 50pt } else { 30pt }
 
-  let tick-area = t.axis-label-size * 2 + t.axis-label-gap
-  let legend-content = draw-legend-auto(
-    ((name: left-label, color: get-color(t, 0)), (name: right-label, color: get-color(t, 1))),
-    t, show-legend: show-legend,
-  )
-  chart-container(width, height, title, t, extra-height: extra-h, legend: legend-content, extra-legend-separation: extra-legend-separation)[
-    #let chart-height = height - t.axis-padding-top - t.axis-padding-bottom - tick-area
-    #let spacing = chart-height / n
-    #let actual-bar-h = spacing * bar-frac
+    let tick-label-area = t.axis-label-size * 2 + t.axis-label-gap
+    let x-title-area = if x-label != none {
+      t.axis-title-size * 2 + t.axis-label-gap
+    } else {
+      0pt
+    }
+    let tick-area = tick-label-area + x-title-area
 
-    #box(width: width, height: chart-height + tick-area)[
-      // Center vertical axis
-      #place(left + top, line(
-        start: (center-x, 0pt),
-        end: (center-x, chart-height),
-        stroke: t.axis-stroke,
-      ))
+    let legend-content = draw-legend-auto(
+      ((name: left-label, color: get-color(t, 0)), (name: right-label, color: get-color(t, 1))),
+      t, show-legend: show-legend,
+    )
 
-      // Horizontal baseline at bottom of bar area
-      #place(left + top, line(
-        start: (label-area, chart-height),
-        end: (width - right-pad, chart-height),
-        stroke: t.axis-stroke,
-      ))
+    chart-container(width, height, title, t, extra-height: extra-h, legend: legend-content, extra-legend-separation: extra-legend-separation)[
+      #let chart-height = height - t.axis-padding-top - t.axis-padding-bottom - tick-area
+      #let spacing = chart-height / n
+      #let actual-bar-h = spacing * bar-frac
 
-      #for (i, label) in labels.enumerate() {
-        let y-pos = i * spacing + (spacing - actual-bar-h) / 2
-        let l-val = left-values.at(i)
-        let r-val = right-values.at(i)
+      #box(width: width, height: chart-height + tick-area)[
+        // Center vertical axis
+        #place(left + top, line(
+          start: (center-x, 0pt),
+          end: (center-x, chart-height),
+          stroke: t.axis-stroke,
+        ))
 
-        // Left bar (grows leftward from center)
-        let l-bar-w = (l-val / max-val) * half-width
-        place(
-          left + top,
-          dx: center-x - l-bar-w,
-          dy: y-pos,
-          rect(
-            width: l-bar-w,
-            height: actual-bar-h,
-            fill: get-color(t, 0),
-            stroke: none,
-          )
-        )
+        // Horizontal baseline at bottom of bar area
+        #place(left + top, line(
+          start: (label-area, chart-height),
+          end: (width - right-pad, chart-height),
+          stroke: t.axis-stroke,
+        ))
 
-        // Right bar (grows rightward from center)
-        let r-bar-w = (r-val / max-val) * half-width
-        place(
-          left + top,
-          dx: center-x,
-          dy: y-pos,
-          rect(
-            width: r-bar-w,
-            height: actual-bar-h,
-            fill: get-color(t, 1),
-            stroke: none,
-          )
-        )
+        #for (i, label) in labels.enumerate() {
+          let y-pos = i * spacing + (spacing - actual-bar-h) / 2
+          let l-val = left-values.at(i)
+          let r-val = right-values.at(i)
 
-        // Left value label — placed just left of the bar end
-        if show-values {
-          let label-w = 25pt
-          let l-label-x = calc.max(label-area, center-x - l-bar-w - label-w - 2pt)
+          // Left bar (grows leftward from center)
+          let l-bar-w = (l-val / max-val) * half-width
           place(
             left + top,
-            dx: l-label-x,
-            dy: y-pos + actual-bar-h / 2,
-            box(width: label-w, align(right,
-              move(dy: -0.5em, text(size: t.value-label-size, fill: t.text-color)[#l-val])))
+            dx: center-x - l-bar-w,
+            dy: y-pos,
+            rect(
+              width: l-bar-w,
+              height: actual-bar-h,
+              fill: get-color(t, 0),
+              stroke: none,
+            )
           )
+
+          // Right bar (grows rightward from center)
+          let r-bar-w = (r-val / max-val) * half-width
+          place(
+            left + top,
+            dx: center-x,
+            dy: y-pos,
+            rect(
+              width: r-bar-w,
+              height: actual-bar-h,
+              fill: get-color(t, 1),
+              stroke: none,
+            )
+          )
+
+          // Left value label — placed just left of the bar end
+          if show-values {
+            let label-w = 25pt
+            let l-label-x = calc.max(label-area, center-x - l-bar-w - label-w - 2pt)
+            place(
+              left + top,
+              dx: l-label-x,
+              dy: y-pos + actual-bar-h / 2,
+              box(width: label-w, align(right,
+                move(dy: -0.5em, text(size: t.value-label-size, fill: t.text-color)[#l-val])))
+            )
+          }
+
+          // Right value label
+          if show-values {
+            place(
+              left + top,
+              dx: center-x + r-bar-w + 5pt,
+              dy: y-pos + actual-bar-h / 2,
+              move(dy: -0.5em, text(size: t.value-label-size, fill: t.text-color)[#r-val])
+            )
+          }
+
+          // Category label on the far left — right-aligned into label area
+          draw-y-label(label, y-pos + actual-bar-h / 2, label-area, t)
         }
 
-        // Right value label
-        if show-values {
+        // X-axis tick labels (symmetric around center) — below the bar area
+        #let div-nt = nice-ticks(0, max-val, count: t.tick-count)
+        #for value in div-nt.ticks {
+          let fraction = if max-val > 0 { value / max-val } else { 0 }
+          let tick-label = format-number(value, digits: div-nt.digits, mode: t.number-format)
+
+          // Right side ticks
+          let rx = center-x + fraction * half-width
           place(
             left + top,
-            dx: center-x + r-bar-w + 5pt,
-            dy: y-pos + actual-bar-h / 2,
-            move(dy: -0.5em, text(size: t.value-label-size, fill: t.text-color)[#r-val])
-          )
-        }
-
-        // Category label on the far left — right-aligned into label area
-        draw-y-label(label, y-pos + actual-bar-h / 2, label-area, t)
-      }
-
-      // X-axis tick labels (symmetric around center) — below the bar area
-      #let div-nt = nice-ticks(0, max-val, count: t.tick-count)
-      #for value in div-nt.ticks {
-        let fraction = if max-val > 0 { value / max-val } else { 0 }
-        let tick-label = format-number(value, digits: div-nt.digits, mode: t.number-format)
-
-        // Right side ticks
-        let rx = center-x + fraction * half-width
-        place(
-          left + top,
-          dx: rx - 1.5em,
-          dy: chart-height + 2pt,
-          box(width: 3em, height: 1.5em,
-            align(center + top, text(size: t.axis-label-size, fill: t.text-color)[#tick-label]))
-        )
-
-        // Left side ticks (mirror, skip zero to avoid double-drawing)
-        if fraction > 0 {
-          let lx = center-x - fraction * half-width
-          place(
-            left + top,
-            dx: lx - 1.5em,
+            dx: rx - 1.5em,
             dy: chart-height + 2pt,
             box(width: 3em, height: 1.5em,
               align(center + top, text(size: t.axis-label-size, fill: t.text-color)[#tick-label]))
           )
+
+          // Left side ticks (mirror, skip zero to avoid double-drawing)
+          if fraction > 0 {
+            let lx = center-x - fraction * half-width
+            place(
+              left + top,
+              dx: lx - 1.5em,
+              dy: chart-height + 2pt,
+              box(width: 3em, height: 1.5em,
+                align(center + top, text(size: t.axis-label-size, fill: t.text-color)[#tick-label]))
+            )
+          }
         }
-      }
-      // X-axis title
-      #if x-label != none {
-        place(left + top, dx: center-x, dy: chart-height + tick-area - 2pt,
-          move(dx: -3em, box(width: 6em, align(center, text(size: t.axis-title-size, fill: t.text-color)[#x-label]))))
-      }
+
+        // X-axis title
+        #if x-label != none {
+          place(
+            left + top,
+            dx: label-area,
+            dy: chart-height + tick-label-area,
+            box(
+              width: usable-width,
+              align(center, text(size: t.axis-title-size, fill: t.text-color)[#x-label]),
+            )
+          )
+        }
+      ]
     ]
-  ]
   })
 }
